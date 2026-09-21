@@ -23,7 +23,7 @@ from .config import va_to_file_offset, is_code_address
 from . import config as _config
 from .disasm import Disassembler
 from .lifter import (Lifter, lift_basic_block, detect_seh_helpers,
-                     _RESULT_SNAPSHOT_SETTERS,
+                     _RESULT_SNAPSHOT_SETTERS, is_jump_table_operand,
                      detect_setjmp_helpers, _func_ident, _operand_width)
 
 
@@ -481,7 +481,7 @@ class FunctionTranslator:
                 has_indexed_jump = any(
                     insn.is_jump and insn.jump_target is None
                     and insn.operands and insn.operands[0].type == "mem"
-                    and insn.operands[0].mem_index
+                    and is_jump_table_operand(insn.operands[0])
                     for insn in prefix)
                 if not bridges or not has_indexed_jump:
                     continue
@@ -527,7 +527,7 @@ class FunctionTranslator:
                 if not insn.operands or insn.operands[0].type != "mem":
                     continue
                 operand = insn.operands[0]
-                if not operand.mem_index or operand.mem_base:
+                if not is_jump_table_operand(operand):
                     continue
                 table_va = operand.mem_disp
                 if not (start <= table_va < upper):

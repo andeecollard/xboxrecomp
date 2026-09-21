@@ -102,6 +102,26 @@ _FUNC_RESERVED_IDENT = frozenset({
 }) | _WIN32_EXPORTS
 
 
+def is_jump_table_operand(op):
+    """Does this memory operand address a jump table this lifter can resolve?
+
+    Both forms appear: `jmp [reg*scale + table]` and `jmp [reg + table]`. The
+    displacement is the table base in each, so it is required; the varying part
+    may arrive as either an index or a base register.
+
+    THIS LIVES HERE, AND CALLERS IMPORT IT, BECAUSE THE PRODUCER AND THE
+    CONSUMER DISAGREED. The CFG recovery in translator.py, which is what
+    DISCOVERS tables and feeds them to this module, tested
+    `not op.mem_index or op.mem_base` -- demanding an index and rejecting any
+    base. That is strictly narrower than what this file resolves, so every
+    `jmp [reg + table]` degraded to an unresolved indirect branch although the
+    machinery to handle it was already here and already documented as handling
+    it. A predicate duplicated in two modules drifted; one predicate imported
+    by both cannot.
+    """
+    return bool(op.mem_disp) and bool(op.mem_index or op.mem_base)
+
+
 def _func_ident(addr, name):
     """C identifier for the recompiled function at addr.
 
@@ -2340,7 +2360,7 @@ class Lifter:
             return []
         op = ops[0]
         # Need a table base (displacement) and an index register
-        if not op.mem_disp or not (op.mem_index or op.mem_base):
+        if not is_jump_table_operand(op):
             return []
         table_va = op.mem_disp
         targets = self.jump_table_targets.get(table_va)
