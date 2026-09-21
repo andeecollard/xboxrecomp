@@ -712,10 +712,51 @@ typedef struct D3DVOLUME_DESC {
  * Lock flags
  * ================================================================ */
 
-#define D3DLOCK_READONLY    0x00000010
-#define D3DLOCK_DISCARD     0x00002000
-#define D3DLOCK_NOOVERWRITE 0x00001000
-#define D3DLOCK_NOSYSLOCK   0x00000800
+/* THESE ARE THE XBOX VALUES, NOT THE PC ONES. They differ, and this header
+ * carried the PC set until now -- which is a live correctness bug, not a
+ * cosmetic one, because 0x10 means opposite things on the two platforms.
+ *
+ * Read out of a shipped title's own statically linked XDK 4134 D3D8:
+ *
+ *   D3DVertexBuffer_Lock   001997C5  test bl,0x10
+ *                          001997C9  jne  <skip>
+ *                          001997DD  mov  [eax],0x41710   ; 0x1710
+ *                                                         ; BREAK_VERTEX_-
+ *                                                         ; BUFFER_CACHE
+ *     0x10 set => the cache break is NOT emitted. That is NOFLUSH. A
+ *     read-only lock would have no reason to suppress a flush.
+ *
+ *   Lock2DSurface          00193246  test bl,0x20
+ *                          0019324E  jne  <skip>
+ *                          00193251  call 0x191730        ; D3D_BlockOnResource
+ *     0x20 set => the wait for the GPU is skipped. That is NOOVERWRITE.
+ *
+ *   Lock2DSurface          0019327F  test bl,0x40         ; selects a tiled
+ *                          001932A4  and  edx,0x3c        ; pitch path
+ *
+ *   D3DVertexBuffer_Lock   001997EF  test bl,0xa0         ; 0x80|0x20
+ *                          001997F9  call 0x1917B0        ; the block path
+ *     0x80 joins 0x20 as a reason to skip waiting, which is what READONLY
+ *     licenses. 0x80 is READONLY by pairing and by elimination -- it is the
+ *     remaining documented XDK lock flag -- rather than by a site that tests
+ *     it alone.
+ *
+ * WHY IT MATTERS. D3DLOCK_READONLY is the only one of these the runtime
+ * currently reads, and it gates the write-back in d3d8_resources.c. With
+ * 0x10 as READONLY, a title that locks NOFLUSH is mapped D3D11_MAP_READ and
+ * its write-back is skipped -- everything it writes is silently discarded.
+ * The reverse error, a genuine 0x80 READONLY lock treated as read-write,
+ * only costs a needless copy.
+ *
+ * PC D3D8, for anyone arriving from that documentation: READONLY 0x10,
+ * NOSYSLOCK 0x800, NOOVERWRITE 0x1000, DISCARD 0x2000. DISCARD and NOSYSLOCK
+ * have no XDK equivalent here and are not defined, so a use of them fails to
+ * compile rather than silently matching the wrong bit.
+ */
+#define D3DLOCK_NOFLUSH     0x00000010
+#define D3DLOCK_NOOVERWRITE 0x00000020
+#define D3DLOCK_TILED       0x00000040
+#define D3DLOCK_READONLY    0x00000080
 
 /* ================================================================
  * Usage flags
